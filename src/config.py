@@ -12,7 +12,7 @@ class Settings:
     openrouter_model: str = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-haiku-4.5")
     embedding_model: str = os.environ.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
     api_key: str = os.environ["API_KEY"]
-    match_count: int = int(os.environ.get("MATCH_COUNT", "5"))
+    match_count: int = int(os.environ.get("MATCH_COUNT", "8"))
 
 
 settings = Settings()

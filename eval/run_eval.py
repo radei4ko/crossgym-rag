@@ -2,6 +2,7 @@ import argparse
 import json
 from pathlib import Path
 
+from src.config import settings
 from src.generation import answer_question
 from src.retrieval import hybrid_search
 
@@ -12,13 +13,15 @@ def load_qa_pairs() -> list[dict]:
     return json.loads(QA_PATH.read_text(encoding="utf-8"))
 
 
-def run_retrieval_eval(match_count: int = 5) -> None:
+def run_retrieval_eval(match_count: int = settings.match_count) -> None:
     qa_pairs = load_qa_pairs()
     hits = 0
     for pair in qa_pairs:
         results = hybrid_search(pair["question"], match_count=match_count)
         sources = [doc["source"] for doc in results]
-        hit = pair["expected_source"] in sources
+        expected = pair["expected_source"]
+        expected_sources = expected if isinstance(expected, list) else [expected]
+        hit = any(source in sources for source in expected_sources)
         hits += hit
         status = "OK " if hit else "MISS"
         print(f"[{status}] {pair['question']} -> {sources}")
@@ -27,7 +30,7 @@ def run_retrieval_eval(match_count: int = 5) -> None:
     print(f"\nRetrieval recall@{match_count}: {hits}/{len(qa_pairs)} = {recall:.0%}")
 
 
-def run_generation_eval(match_count: int = 5) -> None:
+def run_generation_eval(match_count: int = settings.match_count) -> None:
     qa_pairs = load_qa_pairs()
     hits = 0
     for pair in qa_pairs:
