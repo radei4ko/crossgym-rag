@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.generation import _restore_mangled_identifiers, answer_question, build_prompt
+from src.generation import _restore_mangled_identifiers, _strip_bold_markers, answer_question, build_prompt
 
 
 def test_build_prompt_includes_context_and_question():
@@ -95,3 +95,20 @@ def test_restore_mangled_identifiers_ignores_unrelated_text():
     answer = _restore_mangled_identifiers("Зал працює з 07:00 до 21:00.", documents)
 
     assert answer == "Зал працює з 07:00 до 21:00."
+
+
+def test_strip_bold_markers_removes_double_asterisks():
+    assert _strip_bold_markers("Instagram: **crossgym_baza_team**") == "Instagram: crossgym_baza_team"
+
+
+def test_strip_bold_markers_leaves_plain_text_untouched():
+    assert _strip_bold_markers("Немає форматування тут.") == "Немає форматування тут."
+
+
+def test_answer_question_strips_bold_around_identifier():
+    documents = [{"source": "locations_socmisto", "content": "Instagram мережі CrossGYM: crossgym_baza_team"}]
+
+    with patch("src.generation.call_openrouter", return_value="Instagram: **crossgym_baza_team**"):
+        result = answer_question("Дай інстаграм залу", documents)
+
+    assert result["answer"] == "Instagram: crossgym_baza_team"

@@ -84,6 +84,25 @@ def _restore_mangled_identifiers(answer: str, documents: list[dict]) -> str:
     return answer
 
 
+_BOLD_MARKER_RE = re.compile(r"\*\*(.+?)\*\*")
+
+
+def _strip_bold_markers(text: str) -> str:
+    """Remove literal "**bold**" markdown wrapping from the answer.
+
+    The Telegram send step uses parse_mode=HTML (see n8n workflow), not Markdown —
+    HTML mode never touches underscores, which is what actually fixes the
+    identifier-mangling bug (a Markdown parse_mode treats "_word_" as italics and
+    eats the underscores; HTML mode has no such rule). But the model still often
+    wraps key facts in "**...**", and in HTML mode those asterisks are inert
+    literal characters — they'd show up as stray "**" in the chat instead of
+    being rendered as bold. Stripped here rather than relying on a prompt
+    instruction not to use bold, for the same reason identifiers are restored in
+    code: a probabilistic model won't reliably obey a stylistic "don't" forever.
+    """
+    return _BOLD_MARKER_RE.sub(r"\1", text)
+
+
 def call_openrouter(messages: list[dict]) -> str:
     response = httpx.post(
         OPENROUTER_URL,
@@ -99,5 +118,6 @@ def answer_question(question: str, documents: list[dict], history: Optional[list
     messages = build_prompt(question, documents, history)
     answer = call_openrouter(messages)
     answer = _restore_mangled_identifiers(answer, documents)
+    answer = _strip_bold_markers(answer)
     sources = [{"source": doc["source"], "content": doc["content"]} for doc in documents]
     return {"answer": answer, "sources": sources}
