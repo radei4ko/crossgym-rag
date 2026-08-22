@@ -1,8 +1,14 @@
+import re
 from typing import Optional
 
 import httpx
 
 from src.config import settings
+
+# Tokens like Instagram handles ("crossgym_baza_team", "@d__sanya__72") that contain
+# an underscore. These are exactly the strings an LLM tends to mangle by treating
+# "_" as markdown emphasis syntax and stripping it during generation.
+_IDENTIFIER_TOKEN_RE = re.compile(r"@?[A-Za-z0-9][A-Za-z0-9_.]*")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -40,6 +46,44 @@ def build_prompt(question: str, documents: list[dict], history: Optional[list[di
     return messages
 
 
+def _extract_underscored_identifiers(text: str) -> set[str]:
+    """Return tokens in `text` that contain an underscore."""
+    return {token for token in _IDENTIFIER_TOKEN_RE.findall(text) if "_" in token}
+
+
+def _restore_mangled_identifiers(answer: str, documents: list[dict]) -> str:
+    """Deterministically repair identifiers whose underscores the model stripped.
+
+    A system-prompt instruction asking the model to leave underscores in
+    identifiers untouched is inherently probabilistic — in production it still
+    intermittently rendered "crossgym_baza_team" as "crossgymbazateam" (the model
+    pattern-matching "_word_" as markdown italics and "cleaning" it). Wording the
+    prompt more strongly does not make a probabilistic model deterministic, so
+    this guarantees correctness in code instead: for every underscore-containing
+    identifier found verbatim in the retrieved context, if the model's answer
+    contains the same string with underscores stripped (and not the correct
+    string itself), substitute the correct verbatim identifier back in.
+    """
+    for doc in documents:
+        for identifier in _extract_underscored_identifiers(doc.get("content", "")):
+            if identifier in answer:
+                continue  # model already reproduced it correctly
+
+            bare = identifier.lstrip("@")
+            mangled_candidates = {bare.replace("_", "")}
+            if identifier.startswith("@"):
+                mangled_candidates.add("@" + bare.replace("_", ""))
+
+            for mangled in mangled_candidates:
+                stripped_core = mangled.lstrip("@")
+                if stripped_core == bare or len(stripped_core) < 3:
+                    continue  # nothing was actually stripped, or too short to match safely
+                if mangled in answer:
+                    answer = answer.replace(mangled, identifier)
+                    break
+    return answer
+
+
 def call_openrouter(messages: list[dict]) -> str:
     response = httpx.post(
         OPENROUTER_URL,
@@ -54,5 +98,6 @@ def call_openrouter(messages: list[dict]) -> str:
 def answer_question(question: str, documents: list[dict], history: Optional[list[dict]] = None) -> dict:
     messages = build_prompt(question, documents, history)
     answer = call_openrouter(messages)
+    answer = _restore_mangled_identifiers(answer, documents)
     sources = [{"source": doc["source"], "content": doc["content"]} for doc in documents]
     return {"answer": answer, "sources": sources}

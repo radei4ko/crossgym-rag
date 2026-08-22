@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from src.generation import answer_question, build_prompt
+from src.generation import _restore_mangled_identifiers, answer_question, build_prompt
 
 
 def test_build_prompt_includes_context_and_question():
@@ -48,3 +48,50 @@ def test_answer_question_passes_history_through():
 
     sent_messages = mock_call.call_args[0][0]
     assert history[0] in sent_messages
+
+
+def test_answer_question_restores_stripped_instagram_underscores():
+    documents = [
+        {"source": "locations_socmisto", "content": "Instagram мережі CrossGYM: crossgym_baza_team"}
+    ]
+
+    with patch("src.generation.call_openrouter", return_value="Ось інстаграм залу: crossgymbazateam"):
+        result = answer_question("Дай інстаграм залу", documents)
+
+    assert "crossgym_baza_team" in result["answer"]
+    assert "crossgymbazateam" not in result["answer"]
+
+
+def test_answer_question_leaves_correct_identifier_untouched():
+    documents = [
+        {"source": "locations_socmisto", "content": "Instagram мережі CrossGYM: crossgym_baza_team"}
+    ]
+
+    with patch("src.generation.call_openrouter", return_value="Ось інстаграм залу: crossgym_baza_team"):
+        result = answer_question("Дай інстаграм залу", documents)
+
+    assert result["answer"] == "Ось інстаграм залу: crossgym_baza_team"
+
+
+def test_restore_mangled_identifiers_handles_at_prefixed_handle():
+    documents = [{"source": "trainers_socmisto", "content": "Instagram: @dmitriy_pt.ua"}]
+
+    answer = _restore_mangled_identifiers("Ось: dmitriypt.ua", documents)
+
+    assert "@dmitriy_pt.ua" in answer
+
+
+def test_restore_mangled_identifiers_handles_double_underscore_handle():
+    documents = [{"source": "trainers_skhidnyi", "content": "Instagram: @d__sanya__72"}]
+
+    answer = _restore_mangled_identifiers("Тренер має інстаграм @dsanya72", documents)
+
+    assert "@d__sanya__72" in answer
+
+
+def test_restore_mangled_identifiers_ignores_unrelated_text():
+    documents = [{"source": "locations_socmisto", "content": "Instagram мережі CrossGYM: crossgym_baza_team"}]
+
+    answer = _restore_mangled_identifiers("Зал працює з 07:00 до 21:00.", documents)
+
+    assert answer == "Зал працює з 07:00 до 21:00."
