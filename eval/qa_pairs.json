@@ -1,0 +1,20 @@
+[
+  {"question": "Яка адреса залу Соцмісто?", "expected_keywords": ["Степана Тільги"], "expected_source": "locations"},
+  {"question": "Яка адреса залу Східний-2?", "expected_keywords": ["Сахарова"], "expected_source": "locations"},
+  {"question": "Який графік роботи залів у будні дні?", "expected_keywords": ["07:00", "21:00"], "expected_source": "locations"},
+  {"question": "Який графік роботи залів у вихідні?", "expected_keywords": ["09:00", "20:00"], "expected_source": "locations"},
+  {"question": "Скільки коштує разове тренування в тренажерній залі Соцмісто?", "expected_keywords": ["200"], "expected_source": "pricing_socmisto"},
+  {"question": "Скільки коштує безлімітний абонемент на 1 місяць у Соцмісто?", "expected_keywords": ["1199"], "expected_source": "pricing_socmisto"},
+  {"question": "Скільки коштує VIP-абонемент на 3 місяці у Соцмісто?", "expected_keywords": ["4600"], "expected_source": "pricing_socmisto"},
+  {"question": "Скільки коштує разове тренування у Східному-2?", "expected_keywords": ["120"], "expected_source": "pricing_skhidnyi"},
+  {"question": "Скільки коштує абонемент на 8 занять у Східному-2?", "expected_keywords": ["549"], "expected_source": "pricing_skhidnyi"},
+  {"question": "Яка доплата за індивідуальне тренування з тренером у Східному-2?", "expected_keywords": ["400"], "expected_source": "pricing_skhidnyi"},
+  {"question": "Хто з тренерів Східного-2 веде дитячі групи?", "expected_keywords": ["Наталія"], "expected_source": "trainers_skhidnyi"},
+  {"question": "Який Instagram у тренера Дмитра Грицая?", "expected_keywords": ["dmitriy_pt.ua"], "expected_source": "trainers_socmisto"},
+  {"question": "Хто з тренерів Соцмісто веде бокс?", "expected_keywords": ["Андрій Маркін"], "expected_source": "trainers_socmisto"},
+  {"question": "Скільки років досвіду у тренера Едуарда в Східному-2?", "expected_keywords": ["10"], "expected_source": "trainers_skhidnyi"},
+  {"question": "Чи можна скасувати запис в останній момент без штрафу?", "expected_keywords": ["будь-який час"], "expected_source": "policy"},
+  {"question": "Чи діє абонемент з одного залу в іншому залі?", "expected_keywords": ["не є мережевим"], "expected_source": "pricing_socmisto"},
+  {"question": "Який телефон клубу CrossGYM?", "expected_keywords": ["073 655 00 69"], "expected_source": "locations"},
+  {"question": "Хто з тренерів Східного-2 виступає у категорії IFBB фітнес-бікіні?", "expected_keywords": ["Морозова Вікторія"], "expected_source": "trainers_skhidnyi"}
+]
