@@ -47,3 +47,18 @@ def hybrid_search(query_text: str, match_count: int = 5) -> list[dict]:
     fused = reciprocal_rank_fusion([vector_ids, trgm_ids])
     top_ids = [doc_id for doc_id, _score in fused[:match_count]]
     return [docs_by_id[doc_id] for doc_id in top_ids]
+
+
+def vector_only_search(query_text: str, match_count: int = 5) -> list[dict]:
+    """Plain pgvector cosine search, no keyword fusion — the eval baseline hybrid_search is compared against."""
+    client = get_client()
+    query_vector = embed_query(query_text)
+    rows = (
+        client.rpc(
+            "match_documents_vector",
+            {"query_embedding": query_vector, "match_count": match_count},
+        )
+        .execute()
+        .data
+    )
+    return rows
