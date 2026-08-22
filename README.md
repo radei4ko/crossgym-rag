@@ -13,7 +13,7 @@ and the code are in English.
 
 ## Live demo
 
-Talk to it on Telegram: **[@Ghyggfd_bot](https://t.me/Ghyggfd_bot)** — ask it about pricing,
+Talk to it on Telegram: **[@crossgym_chatbot](https://t.me/crossgym_chatbot)** — ask it about pricing,
 trainers, locations, or booking policy in Ukrainian. Ask it something outside its knowledge
 base and it will tell you it doesn't know, rather than guess.
 
