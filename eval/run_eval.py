@@ -21,8 +21,13 @@ def is_refusal(answer: str) -> bool:
 
 
 def _keyword_satisfied(keyword, answer_lower: str) -> bool:
-    """A keyword entry can be a string (must appear) or a list of equivalent
-    phrasings (any one satisfies it) — the model paraphrases correct answers."""
+    """A keyword entry can be: a string (must appear), a list of equivalent phrasings
+    (any one satisfies it), or {"all_of": [group, group, ...]} where each group is a
+    list of alternatives and every group must have at least one match — the model
+    paraphrases correct answers, and Ukrainian word order varies, so a single fixed
+    phrase produces false negatives on genuinely correct answers."""
+    if isinstance(keyword, dict) and "all_of" in keyword:
+        return all(any(alt.lower() in answer_lower for alt in group) for group in keyword["all_of"])
     if isinstance(keyword, list):
         return any(alt.lower() in answer_lower for alt in keyword)
     return keyword.lower() in answer_lower
@@ -32,7 +37,8 @@ def load_qa_pairs() -> list[dict]:
     pairs = json.loads(QA_PATH.read_text(encoding="utf-8"))
     answerable = [p for p in pairs if p["type"] == "answerable"]
     adversarial = [p for p in pairs if p["type"] == "adversarial"]
-    return answerable, adversarial
+    exact_match = [p for p in pairs if p["type"] == "exact_match"]
+    return answerable, adversarial, exact_match
 
 
 def _recall_at_k(pairs: list[dict], search_fn, match_count: int, label: str) -> float:
@@ -52,19 +58,24 @@ def _recall_at_k(pairs: list[dict], search_fn, match_count: int, label: str) -> 
 
 
 def run_retrieval_eval(match_count: int = settings.match_count) -> None:
-    answerable, _ = load_qa_pairs()
+    answerable, _, exact_match = load_qa_pairs()
 
-    print("=== Hybrid (vector + trigram, RRF) ===")
+    print(f"=== Natural-language questions ({len(answerable)}): hybrid vs vector-only ===")
     hybrid_recall = _recall_at_k(answerable, hybrid_search, match_count, "Hybrid")
-
-    print("\n=== Vector-only baseline ===")
+    print()
     vector_recall = _recall_at_k(answerable, vector_only_search, match_count, "Vector-only")
+    print(f"\nHybrid vs vector-only recall@{match_count}: {hybrid_recall:.0%} vs {vector_recall:.0%}")
 
-    print(f"\nHybrid vs vector-only: {hybrid_recall:.0%} vs {vector_recall:.0%}")
+    print(f"\n=== Exact-match queries ({len(exact_match)}): phone numbers, prices, handles — recall@1 ===")
+    print("(this is the case hybrid retrieval exists for; run separately from natural-language Qs above)")
+    hybrid_exact = _recall_at_k(exact_match, hybrid_search, 1, "Hybrid")
+    print()
+    vector_exact = _recall_at_k(exact_match, vector_only_search, 1, "Vector-only")
+    print(f"\nHybrid vs vector-only recall@1 on exact-match queries: {hybrid_exact:.0%} vs {vector_exact:.0%}")
 
 
 def run_generation_eval(match_count: int = settings.match_count) -> None:
-    answerable, adversarial = load_qa_pairs()
+    answerable, adversarial, _ = load_qa_pairs()
 
     print("=== Faithfulness on answerable questions ===")
     hits = 0

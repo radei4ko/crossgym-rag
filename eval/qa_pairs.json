@@ -14,7 +14,7 @@
   {"type": "answerable", "question": "Хто з тренерів Соцмісто веде бокс?", "expected_keywords": ["Андрій Маркін"], "expected_source": "trainers_socmisto"},
   {"type": "answerable", "question": "Скільки років досвіду у тренера Едуарда в Східному-2?", "expected_keywords": ["10"], "expected_source": "trainers_skhidnyi"},
   {"type": "answerable", "question": "Чи можна скасувати запис в останній момент без штрафу?", "expected_keywords": ["будь-який час"], "expected_source": "policy"},
-  {"type": "answerable", "question": "Чи діє абонемент з одного залу в іншому залі?", "expected_keywords": [["не є мережевим", "не мереж", "тільки в тому залі", "тільки в тому клубі"]], "expected_source": "pricing_socmisto"},
+  {"type": "answerable", "question": "Чи діє абонемент з одного залу в іншому залі?", "expected_keywords": [{"all_of": [["не діє", "не працює", "не можна", "не мереж"], ["зал", "клуб"]]}], "expected_source": "pricing_socmisto"},
   {"type": "answerable", "question": "Який телефон залу Соцмісто?", "expected_keywords": ["068 655 00 99"], "expected_source": "locations_socmisto"},
   {"type": "answerable", "question": "Який телефон залу Східний-2?", "expected_keywords": ["098 655 00 99"], "expected_source": "locations_skhidnyi"},
   {"type": "answerable", "question": "Де знаходиться ваш зал?", "expected_keywords": ["Степана Тільги", "Сахарова"], "expected_source": ["locations_socmisto", "locations_skhidnyi"]},
@@ -24,5 +24,12 @@
   {"type": "adversarial", "question": "Скільки коштує протеїновий коктейль у барі залу?"},
   {"type": "adversarial", "question": "Чи є дитяча кімната з нянею на час тренування?"},
   {"type": "adversarial", "question": "Скільки коштує паркування біля залу?"},
-  {"type": "adversarial", "question": "Чи можна оплатити абонемент карткою на рецепції, чи тільки готівкою?"}
+  {"type": "adversarial", "question": "Чи можна оплатити абонемент карткою на рецепції, чи тільки готівкою?"},
+
+  {"type": "exact_match", "question": "068 655 00 99", "expected_source": "locations_socmisto"},
+  {"type": "exact_match", "question": "dmitriy_pt.ua instagram", "expected_source": "trainers_socmisto"},
+  {"type": "exact_match", "question": "549 грн", "expected_source": "pricing_skhidnyi"},
+  {"type": "exact_match", "question": "Степана Тільги 16", "expected_source": "locations_socmisto"},
+  {"type": "exact_match", "question": "Сахарова 17а", "expected_source": "locations_skhidnyi"},
+  {"type": "exact_match", "question": "849 грн", "expected_source": "pricing_skhidnyi"}
 ]

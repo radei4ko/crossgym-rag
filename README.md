@@ -24,28 +24,47 @@ base and it will tell you it doesn't know, rather than guess.
 Run yourself: `python3 -m eval.run_eval --with-generation` (needs `OPENROUTER_API_KEY`;
 retrieval-only numbers need no LLM calls).
 
+Two retrieval sets are measured separately, because they test different things:
+
 | Metric | Score | What it means |
 |---|---|---|
-| Hybrid retrieval recall@5 | **20/20 (100%)** | correct chunk is in the top 5 for every answerable eval question |
-| Vector-only recall@5 (baseline) | **20/20 (100%)** | ties hybrid at k=5 — see caveat below |
-| Hybrid retrieval recall@1 | **18/20 (90%)** | hybrid *loses* to vector-only (100%) at top-1 — see below |
-| Faithfulness (generated answer contains the right facts) | **18/20 (90%)** | measured on the LLM's output, not on retrieval |
-| Refusal rate on out-of-KB questions | **5/5 (100%)** | model never hallucinated an answer to a question genuinely absent from the KB |
+| Hybrid recall@5 — 20 natural-language questions | **20/20 (100%)** | ties vector-only at k=5 (corpus too small at this depth — see below) |
+| Vector-only recall@5 — same 20 questions | **20/20 (100%)** | |
+| Hybrid recall@1 — same 20 questions | **18/20 (90%)** | hybrid *regresses* vs. vector-only's 100% — this is real, see below |
+| Vector-only recall@1 — same 20 questions | **20/20 (100%)** | |
+| Hybrid recall@1 — 6 exact-match queries (phone numbers, prices, handles) | **6/6 (100%)** | this is *why* hybrid retrieval exists |
+| Vector-only recall@1 — same 6 exact-match queries | **0/6 (0%)** | embeddings alone cannot find a bare phone number or price at all |
+| Faithfulness — generated answer contains the right facts | **19/20 (95%)** | measured on the LLM's output, not on retrieval |
+| Refusal rate on 5 out-of-KB questions | **5/5 (100%)** | model never hallucinated an answer absent from the KB |
 
-**Honest caveat on the headline recall@5 numbers:** with a corpus this small (~20 chunks),
-both hybrid and vector-only retrieval saturate to 100% at k=5 — there just isn't enough
-noise in the candidate pool for k=5 to matter yet. The more interesting number is
-**recall@1**, where hybrid actually *regresses* against vector-only: RRF's rank-only fusion
-let a confidently-wrong trigram match outvote a correctly-ranked vector match on 2 of 20
-questions. That's a real limitation of Reciprocal Rank Fusion, not a bug — full breakdown in
+Run yourself: `python3 -m eval.run_eval --with-generation` (needs `OPENROUTER_API_KEY`;
+the two recall@k comparisons need no LLM calls at all).
+
+**On the 20 natural-language questions, hybrid does not clearly beat vector-only** — they
+tie at recall@5 (corpus too small for k=5 to matter — see below), and hybrid actually
+*loses* at recall@1 (90% vs 100%): RRF's rank-only fusion let a doc that scored decently on
+*both* retrievers outvote a doc that was rank-1 on vector alone but absent from trigram's
+candidate list entirely. Retuning `RRF_K` across {1, 5, 10, 30, 60, 100} does not fix this —
+the regression is structural (which lists a doc appears in at all), not a tuning problem.
+Full mechanism in
 [`docs/DESIGN_QA.md`](docs/DESIGN_QA.md#1-why-reciprocal-rank-fusion-rrf-instead-of-a-weighted-sum-of-scores).
 
-**The two faithfulness misses are also worth naming, not hiding:** one is an eval-harness
-artifact (the model gave a correct paraphrase that a literal keyword match didn't catch,
-since fixed by accepting equivalent phrasings — see `eval/qa_pairs.json`); the other is a
-genuine generation-time attribution slip on a question where two different locations' KB
-entries share a keyword ("IFBB fitness-bikini") — the retrieved chunk was there, but the
-model sometimes reports on only one location. Root-caused in
+**So why keep hybrid retrieval at all?** Because natural-language questions aren't the only
+thing this bot receives. A separate, second eval set — bare phone numbers, prices, and
+Instagram handles typed exactly as a user might paste them (`"068 655 00 99"`,
+`"dmitriy_pt.ua instagram"`, `"549 грн"`) — is where semantic embeddings fail outright:
+vector-only scores **0/6** on these, because a bare number or handle carries no semantic
+content for an embedding model to match on. Hybrid scores **6/6**, because trigram search
+finds the exact substring regardless. This is the concrete version of "hybrid helps with
+short, low-context, exact-match strings," not just the theoretical claim — reproducible via
+`eval/run_eval.py`'s `exact_match` question set.
+
+**The one remaining faithfulness miss is worth naming, not hiding:** a question where two
+different locations' trainer rosters both mention the same specialty ("IFBB fitness-bikini")
+— sometimes the model reports on only one location, or (as observed in one run) claims the
+context is incomplete and declines to answer at all. This looks like an occasional
+generation-time attribution issue on ambiguous overlapping-topic chunks rather than a
+retrieval miss (the correct chunk showed up in the retrieval-only eval above). Root-caused in
 [`docs/DESIGN_QA.md`](docs/DESIGN_QA.md#2-what-does-recallk-actually-measure--and-what-does-it-not-measure).
 
 Design rationale for hybrid retrieval, RRF vs. weighted fusion, the embedding model choice,

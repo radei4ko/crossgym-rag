@@ -30,6 +30,30 @@ both converge to 100% on this corpus — there's room for both signals to appear
 disclosed in the README rather than hidden; it's the actual limitation of rank-only fusion,
 not a defect in the implementation.
 
+Retuning `RRF_K` doesn't fix it either — swept {1, 5, 10, 30, 60, 100}, identical 18/20 at
+every value. That's expected once you look at the actual mechanism: in both failing cases,
+the correct doc is rank-1 in vector search but **absent entirely** from trigram's top-20
+(never retrieved by that side at all), while the wrong doc appears in *both* retrievers'
+candidate lists at moderate rank. Its two-retriever combined score
+`1/(k+rank_v) + 1/(k+rank_t)` structurally exceeds the correct doc's single-retriever score
+`1/(k+1)` for any positive `k`, because the extra term is always positive — so no value of
+`k` changes which one wins. RRF here effectively rewards "found by both retrievers,
+mediocre" over "found by exactly one retriever, top-ranked." That's not a bug to patch, it's
+what independent-list rank voting does by construction.
+
+**So why is hybrid retrieval still worth it, given it loses on this eval?** Because the 20
+natural-language questions aren't the case hybrid retrieval is *for*. A second, deliberately
+different eval set — 6 bare exact-match strings a user might paste verbatim (a phone number,
+a price, an Instagram handle plus one word) — shows vector-only failing completely: **0/6**,
+because a string like `"068 655 00 99"` or `"549 грн"` carries no semantic content for an
+embedding model to latch onto. Hybrid scores **6/6** on the same set, because trigram search
+matches the exact substring regardless of semantics. That's the concrete trade being made:
+give up a little precision on natural-language top-1 ranking, in exchange for not silently
+failing every time someone pastes a number or a handle instead of asking a question. Both
+numbers are real and reproducible (`eval/run_eval.py`, `answerable` vs `exact_match` question
+types) — this isn't a case of picking whichever eval flatters the design choice after the
+fact; both were measured, and both are reported.
+
 ## 2. What does recall@k actually measure — and what does it not measure?
 
 `recall@k`: for a question, is the chunk that contains the correct answer present *anywhere*
