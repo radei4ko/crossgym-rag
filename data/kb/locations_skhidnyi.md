@@ -7,4 +7,4 @@
 Графік роботи: будні дні (понеділок–п'ятниця) з 07:00 до 21:00, вихідні дні (субота, неділя)
 з 09:00 до 20:00.
 
-Instagram мережі CrossGYM: crossgym_baza_team
+Instagram мережі CrossGYM: @crossgym_baza_team

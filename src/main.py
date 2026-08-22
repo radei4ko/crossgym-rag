@@ -1,11 +1,24 @@
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from src.config import settings
+from src.embeddings import embed_query
 from src.generation import answer_question
 from src.retrieval import hybrid_search
 
-app = FastAPI(title="CrossGYM RAG Assistant")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Loading the sentence-transformers model is a ~4-5s one-time cost. Without
+    # this, whoever sends the first message after a deploy/restart pays that
+    # latency live instead of it happening during container startup.
+    embed_query("warmup")
+    yield
+
+
+app = FastAPI(title="CrossGYM RAG Assistant", lifespan=_lifespan)
 
 COREFERENCE_MARKERS = [
     "її", "його", "їх", "нього", "неї", "них", "цей", "ця", "це", "той", "та", "те",
