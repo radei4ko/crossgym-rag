@@ -17,6 +17,10 @@ SYSTEM_PROMPT = (
     "наданого контексту. Якщо відповіді немає в контексті — прямо скажи, що не маєш цієї "
     "інформації, не вигадуй.\n\n"
     "Формат відповіді:\n"
+    "- НІКОЛИ не починай відповідь з привітання і не представляйся (\"Я асистент мережі "
+    "CrossGYM\") якщо в повідомленні користувача немає слова-привітання. Це правило без "
+    "винятків: навіть якщо в контексті чи діалозі багато джерел — коли питання чисто "
+    "фактичне (ціна, адреса, тренер тощо), відповідай одразу по суті, без жодного вступу.\n"
     "- Якщо ВСЕ повідомлення — це тільки привітання (\"привіт\", \"добрий день\") або тільки "
     "питання хто ти (\"хто ти\", \"що ти вмієш\"), без жодного іншого запитання поруч — "
     "привітайся, коротко представся (асистент мережі спортзалів CrossGYM) і назви пару "
@@ -34,6 +38,10 @@ SYSTEM_PROMPT = (
     "не можна.\n"
     "- НІКОЛИ не використовуй markdown-заголовки (# або ##) — Telegram показує символи "
     "решітки буквально, це виглядає як сміття.\n"
+    "- У контексті нижче кожен фрагмент позначено номером у квадратних дужках (наприклад "
+    "«[3] (джерело)») — це виключно службова позначка ДЛЯ ТЕБЕ, щоб орієнтуватись у "
+    "джерелах. НІКОЛИ не копіюй ці позначки «[1]», «[2]» тощо у свою відповідь — "
+    "користувач їх не повинен бачити.\n"
     "- Не розбивай відповідь на розділи з підзаголовками. Списком (через «-») пиши тільки "
     "якщо перелічуєш кілька пунктів (наприклад кількох тренерів) — інакше суцільним текстом.\n"
     "- Не став запитання у відповідь, якщо можеш відповісти напряму з контексту. Питай "
@@ -117,6 +125,23 @@ def _strip_bold_markers(text: str) -> str:
     return _BOLD_MARKER_RE.sub(r"\1", text)
 
 
+_CITATION_MARKER_RE = re.compile(r"\s?\[\d{1,2}(?:\s*,\s*\d{1,2})*\]")
+
+
+def _strip_citation_markers(text: str) -> str:
+    """Remove leaked "[1]", "[2]"-style source index markers from the answer.
+
+    build_prompt() numbers each context chunk ("[3] (source)\\n...") purely so the
+    model can tell chunks apart internally. That numbering is not meant to reach
+    the user, but with more chunks in context (match_count raised 5->14) the model
+    started imitating an academic citation style and echoing "[2]" inline. A
+    prompt instruction not to do this helps but, per this project's established
+    pattern (see _strip_bold_markers), a probabilistic model won't reliably obey a
+    stylistic "don't" forever — so this is stripped deterministically too.
+    """
+    return _CITATION_MARKER_RE.sub("", text)
+
+
 def call_openrouter(messages: list[dict]) -> str:
     response = httpx.post(
         OPENROUTER_URL,
@@ -133,5 +158,6 @@ def answer_question(question: str, documents: list[dict], history: Optional[list
     answer = call_openrouter(messages)
     answer = _restore_mangled_identifiers(answer, documents)
     answer = _strip_bold_markers(answer)
+    answer = _strip_citation_markers(answer)
     sources = [{"source": doc["source"], "content": doc["content"]} for doc in documents]
     return {"answer": answer, "sources": sources}

@@ -1,6 +1,12 @@
 from unittest.mock import patch
 
-from src.generation import _restore_mangled_identifiers, _strip_bold_markers, answer_question, build_prompt
+from src.generation import (
+    _restore_mangled_identifiers,
+    _strip_bold_markers,
+    _strip_citation_markers,
+    answer_question,
+    build_prompt,
+)
 
 
 def test_build_prompt_includes_context_and_question():
@@ -112,3 +118,30 @@ def test_answer_question_strips_bold_around_identifier():
         result = answer_question("Дай інстаграм залу", documents)
 
     assert result["answer"] == "Instagram: crossgym_baza_team"
+
+
+def test_strip_citation_markers_removes_bracketed_source_index():
+    assert _strip_citation_markers("Тренування коштує 200 грн [2].") == "Тренування коштує 200 грн."
+
+
+def test_strip_citation_markers_removes_multiple_markers():
+    text = "Зал А [1] коштує 200 грн, зал Б [12] коштує 120 грн."
+    assert _strip_citation_markers(text) == "Зал А коштує 200 грн, зал Б коштує 120 грн."
+
+
+def test_strip_citation_markers_removes_comma_separated_group():
+    text = "Разове тренування коштує 200 грн [1, 4]."
+    assert _strip_citation_markers(text) == "Разове тренування коштує 200 грн."
+
+
+def test_strip_citation_markers_leaves_plain_text_untouched():
+    assert _strip_citation_markers("Немає позначок тут.") == "Немає позначок тут."
+
+
+def test_answer_question_strips_citation_markers():
+    documents = [{"source": "pricing_socmisto", "content": "Разове тренування: 200 грн"}]
+
+    with patch("src.generation.call_openrouter", return_value="Разове тренування коштує 200 грн [2]."):
+        result = answer_question("Скільки коштує тренування?", documents)
+
+    assert result["answer"] == "Разове тренування коштує 200 грн."
