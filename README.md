@@ -17,7 +17,43 @@ Talk to it on Telegram: **[@crossgym_chatbot](https://t.me/crossgym_chatbot)** �
 trainers, locations, or booking policy in Ukrainian. Ask it something outside its knowledge
 base and it will tell you it doesn't know, rather than guess.
 
-<!-- 2-3 real conversation screenshots go here -->
+<p align="center">
+  <img src="docs/demo.gif" width="360" />
+</p>
+
+### Demo — Telegram bot (Ukrainian)
+
+The bot serves a Ukrainian-speaking gym chain. Transcript below for reference.
+
+**Intro** — the assistant states its scope up front: pricing, class schedule,
+trainers, and gym addresses.
+
+**1 · Attribute filter across the trainer dataset**
+> **User:** Which trainers coach boxing?
+> **Bot:** Boxing is coached by: [3 trainers], all at the Sotsmisto location.
+
+Not a single-fact lookup — the answer is filtered by discipline across the full
+trainer set and grouped by location.
+
+**2 · Structured location data**
+> **User:** Give me the gym addresses.
+> **Bot:** We have two locations — Sotsmisto: Stepana Tilhy St. 16, Kryvyi Rih.
+> Skhidnyi-2: Sakharova St. 17a, Kryvyi Rih.
+
+**3 · Out-of-scope question — refuses instead of hallucinating**
+> **User:** Do you have a swimming pool?
+> **Bot:** I don't have information about a swimming pool.
+
+The knowledge base contains no pool data, so the assistant declines rather than
+inventing a plausible answer. This is the behaviour the retrieval evaluation
+harness is built to protect.
+
+**4 · Follow-up resolved from conversation context**
+> **User:** Can I see the gym's Instagram?
+> **Bot:** CrossGYM network Instagram: [handle]
+
+"the gym's" carries over from earlier turns — per-chat short-term memory
+resolves the reference instead of losing it.
 
 ## Results (measured, not asserted)
 
