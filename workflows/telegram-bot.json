@@ -1,0 +1,195 @@
+{
+  "name": "CrossGYM RAG Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "1a1a1a1a-0001-4000-8000-000000000001",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -720,
+        0
+      ],
+      "webhookId": "crossgym-rag-bot-trigger",
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "CrossGYM RAG Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.chatHistories) staticData.chatHistories = {};\nconst chatId = $json.message.chat.id;\nconst history = staticData.chatHistories[chatId] || [];\nreturn { json: { ...$json, history } };"
+      },
+      "id": "1a1a1a1a-0004-4000-8000-000000000004",
+      "name": "Load History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -480,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://crossgymrag.morthain.com/ask",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ question: $json.message.text, history: $json.history }) }}",
+        "options": {}
+      },
+      "id": "1a1a1a1a-0002-4000-8000-000000000002",
+      "name": "Ask RAG API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -240,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "const staticData = $getWorkflowStaticData('global');\nif (!staticData.chatHistories) staticData.chatHistories = {};\nconst chatId = $('Telegram Trigger').item.json.message.chat.id;\nconst question = $('Telegram Trigger').item.json.message.text;\nconst answer = $json.answer;\nconst history = staticData.chatHistories[chatId] || [];\nhistory.push({ role: 'user', content: question });\nhistory.push({ role: 'assistant', content: answer });\nstaticData.chatHistories[chatId] = history.slice(-6);\nreturn { json: $json };"
+      },
+      "id": "1a1a1a1a-0005-4000-8000-000000000005",
+      "name": "Save History",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.answer }}",
+        "replyMarkup": "replyKeyboard",
+        "replyKeyboard": {
+          "rows": [
+            {
+              "row": {
+                "values": [
+                  {
+                    "text": "Ціни на абонементи"
+                  },
+                  {
+                    "text": "Хто з тренерів"
+                  }
+                ]
+              }
+            },
+            {
+              "row": {
+                "values": [
+                  {
+                    "text": "Де знаходяться зали"
+                  },
+                  {
+                    "text": "Як записатися"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "additionalFields": {
+          "appendAttribution": false,
+          "reply_markup_resize_keyboard": true,
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "1a1a1a1a-0003-4000-8000-000000000003",
+      "name": "Send Answer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "CrossGYM RAG Bot"
+        }
+      },
+      "webhookId": "e58a4fd9-5520-41da-bf51-0ecd0d452d9a"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Load History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load History": {
+      "main": [
+        [
+          {
+            "node": "Ask RAG API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask RAG API": {
+      "main": [
+        [
+          {
+            "node": "Save History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save History": {
+      "main": [
+        [
+          {
+            "node": "Send Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "instanceId": "stripped"
+  }
+}
