@@ -2,8 +2,7 @@
 
 A retrieval-augmented generation (RAG) system that answers questions about a gym chain
 (locations, pricing, trainers, booking policy) from its real knowledge base — exposed as a
-REST API and, live, as a Telegram bot. Built as a portfolio project to demonstrate
-production-style RAG engineering: hybrid retrieval, citation-backed answers, and an
+REST API and, live, as a Telegram bot. Hybrid retrieval, citation-backed answers, and an
 evaluation harness that measures retrieval and generation separately — not just a prompt
 wrapped in an API.
 
@@ -225,6 +224,8 @@ crossgym-rag/
 │   ├── qa_pairs.json    # 20 answerable + 5 adversarial (out-of-KB) Q&A pairs
 │   └── run_eval.py       # retrieval recall@k (hybrid vs vector-only), faithfulness, refusal rate
 ├── tests/                 # pytest: chunking, RRF fusion, generation (mocked)
+├── workflows/
+│   └── telegram-bot.json  # n8n workflow export (credentials/API key stripped)
 └── Dockerfile
 ```
 
@@ -283,7 +284,8 @@ Docker network; n8n reaches it the same way any other client would — a plain H
 `/ask` with the API key in a header. The n8n workflow itself holds no application logic
 beyond the Telegram plumbing (webhook trigger → load/save per-chat history → call the API →
 reply) — all retrieval, fusion, and generation logic lives in this repo, not in the
-workflow.
+workflow. Workflow export (credentials and the API key stripped):
+[`workflows/telegram-bot.json`](workflows/telegram-bot.json).
 
 For local development or a single-container deployment elsewhere:
 ```
