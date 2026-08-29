@@ -12,7 +12,7 @@ class Settings:
     openrouter_model: str = os.environ.get("OPENROUTER_MODEL", "google/gemini-2.5-flash")
     embedding_model: str = os.environ.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
     api_key: str = os.environ["API_KEY"]
-    match_count: int = int(os.environ.get("MATCH_COUNT", "14"))
+    match_count: int = int(os.environ.get("MATCH_COUNT", "60"))
 
 
 settings = Settings()
