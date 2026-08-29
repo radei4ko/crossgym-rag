@@ -1,5 +1,7 @@
 # CrossGYM RAG Assistant
 
+[![CI](https://github.com/radei4ko/crossgym-rag/actions/workflows/ci.yml/badge.svg)](https://github.com/radei4ko/crossgym-rag/actions/workflows/ci.yml)
+
 A retrieval-augmented generation (RAG) system that answers questions about a gym chain
 (locations, pricing, trainers, booking policy) from its real knowledge base — exposed as a
 REST API and, live, as a Telegram bot. Hybrid retrieval, citation-backed answers, and an
