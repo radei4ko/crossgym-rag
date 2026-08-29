@@ -76,47 +76,62 @@ own locations and specialty instead of merging them into one entity.
 Run yourself: `python3 -m eval.run_eval --with-generation` (needs `OPENROUTER_API_KEY`;
 retrieval-only numbers need no LLM calls).
 
+Re-measured after the KB grew from 2 to 4 locations (17 → 56 chunks). The eval set grew
+alongside it — 24 answerable questions and 7 exact-match queries now (was 20 and 6), including
+new-location questions and a same-first-name trainer disambiguation case.
+
 Two retrieval sets are measured separately, because they test different things:
 
 | Metric | Score | What it means |
 |---|---|---|
-| Hybrid recall@5 — 20 natural-language questions | **20/20 (100%)** | ties vector-only at k=5 (corpus too small at this depth — see below) |
-| Vector-only recall@5 — same 20 questions | **20/20 (100%)** | |
-| Hybrid recall@1 — same 20 questions | **18/20 (90%)** | hybrid *regresses* vs. vector-only's 100% — this is real, see below |
-| Vector-only recall@1 — same 20 questions | **20/20 (100%)** | |
-| Hybrid recall@1 — 6 exact-match queries (phone numbers, prices, handles) | **6/6 (100%)** | this is *why* hybrid retrieval exists |
-| Vector-only recall@1 — same 6 exact-match queries | **0/6 (0%)** | embeddings alone cannot find a bare phone number or price at all |
-| Faithfulness — generated answer contains the right facts | **19/20 (95%)** | measured on the LLM's output, not on retrieval |
+| Hybrid recall@5 — 24 natural-language questions | **24/24 (100%)** | ties vector-only at k=5 (corpus still small at this depth — see below) |
+| Vector-only recall@5 — same 24 questions | **24/24 (100%)** | |
+| Hybrid recall@1 — same 24 questions | **20/24 (83%)** | hybrid *regresses* vs. vector-only's 96% — this is real, see below |
+| Vector-only recall@1 — same 24 questions | **23/24 (96%)** | |
+| Hybrid recall@1 — 7 exact-match queries (phone numbers, prices, handles) | **4/7 (57%)** | down from 6/6 on the 2-location KB — corpus growth introduced *duplicate* exact-match values (two locations now share a phone number and two share price points), so recall@1 alone can land on a source other than the one the eval expected, even when it's a genuinely correct answer — see below |
+| Vector-only recall@1 — same 7 exact-match queries | **1/7 (14%)** | embeddings still cannot find a bare phone number or price on their own |
+| Faithfulness — generated answer contains the right facts | **23/24 (96%)** | measured on the LLM's output, not on retrieval; observed 22–23/24 (92–96%) across repeated runs — see below |
 | Refusal rate on 5 out-of-KB questions | **5/5 (100%)** | model never hallucinated an answer absent from the KB |
 
-Run yourself: `python3 -m eval.run_eval --with-generation` (needs `OPENROUTER_API_KEY`;
-the two recall@k comparisons need no LLM calls at all).
+The production API runs with `MATCH_COUNT=60` (near the full 56-chunk corpus — see the design
+note below), not the `k=5`/`k=1` values in this table. Those two depths are kept fixed here on
+purpose: they're what originally exposed the RRF recall@1 regression, and re-measuring at the
+same depths after the KB tripled in size is what makes this table a comparison, not just a
+fresh set of numbers.
 
-**On the 20 natural-language questions, hybrid does not clearly beat vector-only** — they
-tie at recall@5 (corpus too small for k=5 to matter — see below), and hybrid actually
-*loses* at recall@1 (90% vs 100%): RRF's rank-only fusion let a doc that scored decently on
-*both* retrievers outvote a doc that was rank-1 on vector alone but absent from trigram's
-candidate list entirely. Retuning `RRF_K` across {1, 5, 10, 30, 60, 100} does not fix this —
-the regression is structural (which lists a doc appears in at all), not a tuning problem.
-Full mechanism in
+**On the 24 natural-language questions, hybrid does not clearly beat vector-only** — they
+tie at recall@5, and hybrid actually *loses* at recall@1 (83% vs 96%): RRF's rank-only fusion
+let a doc that scored decently on *both* retrievers outvote a doc that was rank-1 on vector
+alone but absent from trigram's candidate list entirely. Retuning `RRF_K` across
+{1, 5, 10, 30, 60, 100} does not fix this — the regression is structural (which lists a doc
+appears in at all), not a tuning problem, and it's slightly *wider* now (was 90% vs 100% on
+the 2-location KB) simply because there are more competing documents for RRF to rank. Full
+mechanism in
 [`docs/DESIGN_QA.md`](docs/DESIGN_QA.md#1-why-reciprocal-rank-fusion-rrf-instead-of-a-weighted-sum-of-scores).
 
 **So why keep hybrid retrieval at all?** Because natural-language questions aren't the only
 thing this bot receives. A separate, second eval set — bare phone numbers, prices, and
 Instagram handles typed exactly as a user might paste them (`"068 655 00 99"`,
 `"dmitriy_pt.ua instagram"`, `"549 грн"`) — is where semantic embeddings fail outright:
-vector-only scores **0/6** on these, because a bare number or handle carries no semantic
-content for an embedding model to match on. Hybrid scores **6/6**, because trigram search
-finds the exact substring regardless. This is the concrete version of "hybrid helps with
-short, low-context, exact-match strings," not just the theoretical claim — reproducible via
-`eval/run_eval.py`'s `exact_match` question set.
+vector-only scores **1/7** on these, because a bare number or handle carries almost no
+semantic content for an embedding model to match on. Hybrid scores **4/7** — lower than the
+old 6/6, and worth being honest about why: adding Vechirniy reused Skhidnyi-2's exact price
+points (`549 грн`, `849 грн`) and Sotsmisto's exact phone number (`068 655 00 99`) — real data,
+not a synthetic edge case. `recall@1` only checks whether the *single* top result is one of the
+now-multiple valid sources; trigram sometimes surfaces the other equally-correct one first.
+This is a measurement artifact of `k=1` on now-ambiguous ground truth, not evidence hybrid got
+worse at finding exact substrings — but it's reported as measured, not smoothed over.
+Reproducible via `eval/run_eval.py`'s `exact_match` question set.
 
-**The one remaining faithfulness miss is worth naming, not hiding:** a question where two
-different locations' trainer rosters both mention the same specialty ("IFBB fitness-bikini")
-— sometimes the model reports on only one location, or (as observed in one run) claims the
-context is incomplete and declines to answer at all. This looks like an occasional
-generation-time attribution issue on ambiguous overlapping-topic chunks rather than a
-retrieval miss (the correct chunk showed up in the retrieval-only eval above). Root-caused in
+**The two current faithfulness misses are worth naming, not hiding.** One is the same
+pre-existing case as before the KB grew: a question where two locations' trainer rosters both
+mention the same specialty ("IFBB fitness-bikini") — the model sometimes reports on only one
+location. The other is new: "Хто з тренерів Соцмісто веде бокс?" (who coaches boxing at
+Sotsmisto) sometimes drops one of three matching trainers from the list when the model is
+asked to enumerate several candidates from a longer roster — the same class of issue, now
+surfacing on a bigger trainer set. Both look like an occasional generation-time attribution
+issue on ambiguous or multi-candidate chunks rather than a retrieval miss (the correct chunks
+show up in the retrieval-only eval above). Root-caused in
 [`docs/DESIGN_QA.md`](docs/DESIGN_QA.md#2-what-does-recallk-actually-measure--and-what-does-it-not-measure).
 
 Design rationale for hybrid retrieval, RRF vs. weighted fusion, the embedding model choice,
@@ -157,6 +172,14 @@ Instagram?" has no entity name in it — retrieval alone can't resolve it. The l
 of the conversation are kept per chat and sent alongside the question, and the previous
 assistant reply is folded into the retrieval query itself so the right chunk gets fetched
 even when the current question doesn't name the entity.
+
+**`MATCH_COUNT` scales with corpus size, not a fixed constant.** Retrieval
+depth (`MATCH_COUNT=14`) was tuned for a 17-chunk knowledge base. When the KB
+tripled to 56 chunks after adding two more locations, the same fixed count
+started under-covering the corpus and degraded retrieval quality. Raised to
+`MATCH_COUNT=60`. A more robust fix would scale this proportionally to
+`SELECT count(*) FROM documents` rather than picking a number by eye — noted
+as a follow-up, not yet implemented.
 
 ## Architecture
 
@@ -238,7 +261,7 @@ crossgym-rag/
 │   ├── generation.py   # prompt building (+ conversation history) + OpenRouter call
 │   └── main.py          # FastAPI app: POST /ask, GET /health
 ├── eval/
-│   ├── qa_pairs.json    # 20 answerable + 5 adversarial (out-of-KB) Q&A pairs
+│   ├── qa_pairs.json    # 24 answerable + 5 adversarial (out-of-KB) + 7 exact-match Q&A pairs
 │   └── run_eval.py       # retrieval recall@k (hybrid vs vector-only), faithfulness, refusal rate
 ├── tests/                 # pytest: chunking, RRF fusion, generation (mocked)
 ├── workflows/

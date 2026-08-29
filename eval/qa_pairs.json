@@ -17,8 +17,12 @@
   {"type": "answerable", "question": "Чи діє абонемент з одного залу в іншому залі?", "expected_keywords": [{"all_of": [["не діє", "не працює", "не можна", "не мереж"], ["зал", "клуб"]]}], "expected_source": "pricing_socmisto"},
   {"type": "answerable", "question": "Який телефон залу Соцмісто?", "expected_keywords": ["068 655 00 99"], "expected_source": "locations_socmisto"},
   {"type": "answerable", "question": "Який телефон залу Східний-2?", "expected_keywords": ["098 655 00 99"], "expected_source": "locations_skhidnyi"},
-  {"type": "answerable", "question": "Де знаходиться ваш зал?", "expected_keywords": ["Степана Тільги", "Сахарова"], "expected_source": ["locations_socmisto", "locations_skhidnyi"]},
+  {"type": "answerable", "question": "Де знаходиться ваш зал?", "expected_keywords": ["Степана Тільги", "Сахарова", "Гагаріна", "Вечірній"], "expected_source": ["locations_socmisto", "locations_skhidnyi", "locations_95kvartal", "locations_vechirniy"]},
   {"type": "answerable", "question": "Хто з тренерів Східного-2 виступає у категорії IFBB фітнес-бікіні?", "expected_keywords": ["Морозова Вікторія"], "expected_source": "trainers_skhidnyi"},
+  {"type": "answerable", "question": "Яка адреса залу 95 квартал?", "expected_keywords": ["Гагаріна"], "expected_source": "locations_95kvartal"},
+  {"type": "answerable", "question": "Скільки коштує безлімітний абонемент на 1 місяць у залі Вечірній?", "expected_keywords": ["849"], "expected_source": "pricing_vechirniy"},
+  {"type": "answerable", "question": "Хто з тренерів Соцмісто також проводить тренування в залі 95 квартал?", "expected_keywords": [["Дмитро Грицай", "Валентин", "Владислав Коляда"]], "expected_source": "trainers_socmisto"},
+  {"type": "answerable", "question": "Розкажи про Катерину Резвін і про Катерину Кабанець - вони одна людина?", "expected_keywords": ["Резвін", "Кабанець", ["різні", "не одна людина", "не та сама"]], "expected_source": ["trainers_95kvartal", "trainers_vechirniy", "trainers_skhidnyi"]},
 
   {"type": "adversarial", "question": "Чи є у вас басейн?"},
   {"type": "adversarial", "question": "Скільки коштує протеїновий коктейль у барі залу?"},
@@ -26,10 +30,11 @@
   {"type": "adversarial", "question": "Скільки коштує паркування біля залу?"},
   {"type": "adversarial", "question": "Чи можна оплатити абонемент карткою на рецепції, чи тільки готівкою?"},
 
-  {"type": "exact_match", "question": "068 655 00 99", "expected_source": "locations_socmisto"},
+  {"type": "exact_match", "question": "068 655 00 99", "expected_source": ["locations_socmisto", "locations_vechirniy"]},
   {"type": "exact_match", "question": "dmitriy_pt.ua instagram", "expected_source": "trainers_socmisto"},
-  {"type": "exact_match", "question": "549 грн", "expected_source": "pricing_skhidnyi"},
+  {"type": "exact_match", "question": "549 грн", "expected_source": ["pricing_skhidnyi", "pricing_vechirniy"]},
   {"type": "exact_match", "question": "Степана Тільги 16", "expected_source": "locations_socmisto"},
   {"type": "exact_match", "question": "Сахарова 17а", "expected_source": "locations_skhidnyi"},
-  {"type": "exact_match", "question": "849 грн", "expected_source": "pricing_skhidnyi"}
+  {"type": "exact_match", "question": "849 грн", "expected_source": ["pricing_skhidnyi", "pricing_vechirniy"]},
+  {"type": "exact_match", "question": "073 655 00 69", "expected_source": "locations_95kvartal"}
 ]
