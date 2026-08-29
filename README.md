@@ -8,9 +8,9 @@ REST API and, live, as a Telegram bot. Hybrid retrieval, citation-backed answers
 evaluation harness that measures retrieval and generation separately — not just a prompt
 wrapped in an API.
 
-The knowledge base is real: two CrossGYM locations (Sotsmisto, Skhidnyi-2) in Kryvyi Rih,
-Ukraine, with their actual pricing and trainer rosters. Content is in Ukrainian; this README
-and the code are in English.
+The knowledge base is real: four CrossGYM locations (Sotsmisto, Skhidnyi-2, 95 Kvartal,
+Vechirniy) in Kryvyi Rih, Ukraine, with their actual pricing and trainer rosters. Content is
+in Ukrainian; this README and the code are in English.
 
 ## Live demo
 
@@ -31,15 +31,18 @@ trainers, and gym addresses.
 
 **1 · Attribute filter across the trainer dataset**
 > **User:** Which trainers coach boxing?
-> **Bot:** Boxing is coached by: [3 trainers], all at the Sotsmisto location.
+> **Bot:** Boxing is coached by: [3 trainers] — two at Sotsmisto, one who
+> teaches at both Sotsmisto and 95 Kvartal.
 
 Not a single-fact lookup — the answer is filtered by discipline across the full
-trainer set and grouped by location.
+trainer set (now four locations' worth) and grouped by location, including a
+trainer who works at more than one club.
 
 **2 · Structured location data**
 > **User:** Give me the gym addresses.
-> **Bot:** We have two locations — Sotsmisto: Stepana Tilhy St. 16, Kryvyi Rih.
-> Skhidnyi-2: Sakharova St. 17a, Kryvyi Rih.
+> **Bot:** Sotsmisto: Stepana Tilhy St. 16. Skhidnyi-2: Sakharova St. 17a.
+> 95 Kvartal (Plaza-3): Prospekt Hahyarina 4a. Vechirniy: Vechirniy Blvd. 18a.
+> All in Kryvyi Rih.
 
 **3 · Out-of-scope question — refuses instead of hallucinating**
 > **User:** Do you have a swimming pool?
@@ -55,6 +58,18 @@ harness is built to protect.
 
 "the gym's" carries over from earlier turns — per-chat short-term memory
 resolves the reference instead of losing it.
+
+**5 · Disambiguating two trainers with the same first name**
+> **User:** Tell me about Kateryna Rezvin and Kateryna Kabanets — are they the
+> same person?
+> **Bot:** No, different trainers. Kateryna Rezvin teaches group "Power
+> Fitness" classes at Vechirniy and 95 Kvartal. Kateryna Kabanets is a
+> gym-floor and functional-fitness trainer (also a nutritionist) at
+> Skhidnyi-2 and Vechirniy.
+
+Two unrelated trainers share a first name across two different location files
+— the answer keeps them apart by surname and correctly attributes each one's
+own locations and specialty instead of merging them into one entity.
 
 ## Results (measured, not asserted)
 
