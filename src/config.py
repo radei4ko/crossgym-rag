@@ -12,6 +12,9 @@ class Settings:
     openrouter_model: str = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-5.5")
     # "low" cuts latency ~40% with no quality loss on this task (measured). Empty string = provider default.
     openrouter_reasoning_effort: str = os.environ.get("OPENROUTER_REASONING_EFFORT", "low")
+    # Cap on output tokens (incl. reasoning). Without it OpenRouter reserves the model's max output
+    # against the credit balance and returns 402 when the balance is low, even for tiny replies.
+    openrouter_max_tokens: int = int(os.environ.get("OPENROUTER_MAX_TOKENS", "2000"))
     embedding_model: str = os.environ.get("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
     api_key: str = os.environ["API_KEY"]
     match_count: int = int(os.environ.get("MATCH_COUNT", "60"))

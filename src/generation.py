@@ -156,7 +156,11 @@ def _strip_citation_markers(text: str) -> str:
 
 
 def call_openrouter(messages: list[dict]) -> str:
-    payload: dict = {"model": settings.openrouter_model, "messages": messages}
+    payload: dict = {
+        "model": settings.openrouter_model,
+        "messages": messages,
+        "max_tokens": settings.openrouter_max_tokens,
+    }
     if settings.openrouter_reasoning_effort:
         payload["reasoning"] = {"effort": settings.openrouter_reasoning_effort}
     response = httpx.post(
