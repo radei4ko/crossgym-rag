@@ -1,4 +1,5 @@
 import re
+import time
 from typing import Optional
 
 import httpx
@@ -163,12 +164,17 @@ def call_openrouter(messages: list[dict]) -> str:
     }
     if settings.openrouter_reasoning_effort:
         payload["reasoning"] = {"effort": settings.openrouter_reasoning_effort}
-    response = httpx.post(
-        OPENROUTER_URL,
-        headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-        json=payload,
-        timeout=30.0,
-    )
+    for attempt in range(3):
+        response = httpx.post(
+            OPENROUTER_URL,
+            headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
+            json=payload,
+            timeout=30.0,
+        )
+        if response.status_code in (429, 500, 502, 503) and attempt < 2:
+            time.sleep(1.5 * (attempt + 1))  # transient upstream limit/outage: retry briefly
+            continue
+        break
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 

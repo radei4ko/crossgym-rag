@@ -9,7 +9,7 @@ class Settings:
     supabase_url: str = os.environ["SUPABASE_URL"]
     supabase_service_key: str = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
     openrouter_api_key: str = os.environ["OPENROUTER_API_KEY"]
-    openrouter_model: str = os.environ.get("OPENROUTER_MODEL", "anthropic/claude-sonnet-5.5")
+    openrouter_model: str = os.environ.get("OPENROUTER_MODEL", "qwen/qwen3-next-80b-a3b-instruct")
     # "low" cuts latency ~40% with no quality loss on this task (measured). Empty string = provider default.
     openrouter_reasoning_effort: str = os.environ.get("OPENROUTER_REASONING_EFFORT", "low")
     # Cap on output tokens (incl. reasoning). Without it OpenRouter reserves the model's max output
