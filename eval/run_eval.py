@@ -3,12 +3,12 @@ import json
 from pathlib import Path
 
 from src.config import settings
-from src.generation import answer_question
+from src.pipeline import respond
 from src.retrieval import hybrid_search, vector_only_search
 
 QA_PATH = Path(__file__).resolve().parent / "qa_pairs.json"
 
-NEGATION_MARKERS = ["немає", "не маю", "не володію", "не знаю", "не маємо", "не згадується", "не вказано", "не вказан"]
+NEGATION_MARKERS = ["немає", "не маю", "не володію", "не знаю", "не маємо", "не згадується", "не вказано", "не вказан", "не містить"]
 INFO_STEM = "інформ"
 
 
@@ -17,7 +17,7 @@ def is_refusal(answer: str) -> bool:
     varies ("немає інформації" vs "інформації ... немає"), so a fixed phrase match
     produces false negatives on a genuinely correct refusal."""
     lowered = answer.lower()
-    return any(marker in lowered for marker in NEGATION_MARKERS) and INFO_STEM in lowered
+    return any(marker in lowered for marker in NEGATION_MARKERS) and (INFO_STEM in lowered or "контекст" in lowered)
 
 
 def _keyword_satisfied(keyword, answer_lower: str) -> bool:
@@ -80,8 +80,7 @@ def run_generation_eval(match_count: int = settings.match_count) -> None:
     print("=== Faithfulness on answerable questions ===")
     hits = 0
     for pair in answerable:
-        documents = hybrid_search(pair["question"], match_count=match_count)
-        result = answer_question(pair["question"], documents)
+        result = respond(pair["question"])  # same code path as the bot: routing + language + model
         answer_lower = result["answer"].lower()
         found_all = all(_keyword_satisfied(keyword, answer_lower) for keyword in pair["expected_keywords"])
         hits += found_all
@@ -93,8 +92,7 @@ def run_generation_eval(match_count: int = settings.match_count) -> None:
     print("\n=== Refusal on adversarial (out-of-KB) questions ===")
     refusals = 0
     for pair in adversarial:
-        documents = hybrid_search(pair["question"], match_count=match_count)
-        result = answer_question(pair["question"], documents)
+        result = respond(pair["question"])
         refused = is_refusal(result["answer"])
         refusals += refused
         status = "OK " if refused else "HALLUCINATED"

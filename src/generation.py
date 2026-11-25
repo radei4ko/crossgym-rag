@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from typing import Optional
@@ -5,6 +6,9 @@ from typing import Optional
 import httpx
 
 from src.config import settings
+from src.lang import LANG_NAMES, UK, answer_language_ok
+
+logger = logging.getLogger("crossgym.generation")
 
 # Tokens like Instagram handles ("crossgym_baza_team", "@d__sanya__72") that contain
 # an underscore. These are exactly the strings an LLM tends to mangle by treating
@@ -13,69 +17,80 @@ _IDENTIFIER_TOKEN_RE = re.compile(r"@?[A-Za-z0-9][A-Za-z0-9_.]*")
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Short on purpose. Everything that can be decided in code is NOT in here: reply
+# language (src/lang.py), greetings (src/pipeline.py), source numbering (none),
+# identifier/markdown clean-up (post-processing below).
 SYSTEM_PROMPT = (
-    "Ти асистент мережі спортзалів CrossGYM у Telegram-чаті. Відповідай тільки на основі "
-    "наданого контексту. Якщо відповіді немає в контексті — прямо скажи, що не маєш цієї "
-    "інформації, не вигадуй.\n\n"
-    "Формат відповіді:\n"
-    "- НІКОЛИ не починай відповідь з привітання і не представляйся (\"Я асистент мережі "
-    "CrossGYM\") якщо в повідомленні користувача немає слова-привітання. Це правило без "
-    "винятків: навіть якщо в контексті чи діалозі багато джерел — коли питання чисто "
-    "фактичне (ціна, адреса, тренер тощо), відповідай одразу по суті, без жодного вступу.\n"
-    "- Якщо ВСЕ повідомлення — це тільки привітання (\"привіт\", \"добрий день\") або тільки "
-    "питання хто ти (\"хто ти\", \"що ти вмієш\"), без жодного іншого запитання поруч — "
-    "привітайся, коротко представся (асистент мережі спортзалів CrossGYM) і назви пару "
-    "прикладів чим можеш допомогти (ціни, розклад, тренери, адреси залів). Якщо ж у "
-    "повідомленні є ще й конкретне питання (навіть після привітання) — відповідай тільки "
-    "по суті питання, без цього вступу.\n"
-    "- Пиши як жива людина в месенджері: природно, без канцеляриту. Не обов'язково "
-    "відповідати мінімально коротко — якщо у контексті є корисні деталі по темі питання "
-    "(суміжні варіанти, умови, нюанси), додай їх, щоб відповідь була змістовною. Але без "
-    "води, повторів і фраз ні про що.\n"
-    "- Розширюй відповідь ТІЛЬКИ фактами з контексту. Якщо в контексті немає прямої "
-    "відповіді (наприклад питають про щось, чого в контексті просто немає — басейн, "
-    "паркування тощо) — НЕ стверджуй ні \"так\", ні \"ні\": чесно скажи, що не маєш цієї "
-    "інформації. \"Немає інформації про X\" і \"X не існує\" — це різні речі, плутати їх "
-    "не можна.\n"
-    "- НІКОЛИ не використовуй markdown-заголовки (# або ##) — Telegram показує символи "
-    "решітки буквально, це виглядає як сміття.\n"
-    "- У контексті нижче кожен фрагмент позначено номером у квадратних дужках (наприклад "
-    "«[3] (джерело)») — це виключно службова позначка ДЛЯ ТЕБЕ, щоб орієнтуватись у "
-    "джерелах. НІКОЛИ не копіюй ці позначки «[1]», «[2]» тощо у свою відповідь — "
-    "користувач їх не повинен бачити.\n"
-    "- Не розбивай відповідь на розділи з підзаголовками. Списком (через «-») пиши тільки "
-    "якщо перелічуєш кілька пунктів (наприклад кількох тренерів) — інакше суцільним текстом.\n"
-    "- Не став запитання у відповідь, якщо можеш відповісти напряму з контексту. Питай "
-    "уточнення тільки якщо дійсно неможливо зрозуміти що людина має на увазі.\n"
-    "- Якщо в історії діалогу вище згадувалась конкретна людина, зал чи тема — і нове "
-    "питання явно про неї ж (наприклад «а її інстаграм?», «а там скільки коштує?») — "
-    "відповідай про неї, не перепитуй хто мається на увазі.\n"
-    "- Ідентифікатори з контексту (номери телефонів, Instagram-акаунти, ціни, адреси) "
-    "копіюй у відповідь ДОСЛІВНО, символ у символ. Символи підкреслення (_) в акаунтах "
-    "— це частина ніка, а не markdown-курсив: не прибирай і не змінюй їх.\n"
-    "- Відповідай тією мовою, якою поставлено питання, АБО тією, яку користувач явно "
-    "попросив (наприклад «talk in english», «можеш по-російськи?», «answer in English "
-    "please»). Вибір МОВИ відповіді — це НЕ факт, який треба шукати в контексті, це просто "
-    "формат виводу: виконуй такий запит одразу, навіть якщо контекст (база знань) весь "
-    "українською. Сам контент відповіді як і раніше бери тільки з контексту — міняється "
-    "лише мова, якою ти це переказуєш, а не джерело фактів.\n"
-    "- Мова відповіді тримається протягом усього діалогу. Якщо десь вище в історії "
-    "користувач явно просив відповідати певною мовою — продовжуй цією ж мовою у ВСІХ "
-    "наступних відповідях, навіть якщо нове повідомлення коротке, неоднозначне або "
-    "складається зі слів, які формально виглядають як українські (запозичення, назви "
-    "занять тощо). Не повертайся на українську \"за замовчуванням\" просто тому, що "
-    "конкретне повідомлення саме по собі не дає явної мовної підказки — дивись на всю "
-    "історію діалогу. Перемикайся назад тільки якщо користувач явно попросить іншу мову "
-    "знову.\n"
-    "- Якщо відповідаєш українською — пиши грамотною стандартною українською мовою, без "
-    "орфографічних помилок і без рідкісних чи застарілих словоформ — якщо не впевнений у "
-    "формі слова, вибирай простішу й очевидно правильну."
+    "You are the Telegram assistant of the CrossGYM gym chain in Kryvyi Rih.\n"
+    "Answer ONLY from the Context. If the Context says nothing about what the user asks (a pool, "
+    "parking, a bar, payment methods ...), reply in one or two sentences that you do not have that "
+    "information. \"No information\" is not the same as \"no\": NEVER say \"we don't have X\" or "
+    "\"there is no X\" unless the Context states it explicitly. Never invent phone numbers, prices, "
+    "addresses or handles; do not suggest a phone number that is not written in the Context.\n\n"
+    "Style: a short, natural chat message in plain text. No markdown headings and no bold. "
+    "Use \"- \" lists only when listing several items. Do not start with a greeting or a "
+    "self-introduction and do not comment on the language: answer the question straight away.\n"
+    "Facts: copy names, prices, phone numbers, addresses and @handles exactly as written in the "
+    "Context, keeping underscores in handles. Use hall names exactly as they appear in the Context "
+    "headers.\n"
+    "Lists: when asked who / which / all, go through EVERY entry in the Context and list every "
+    "match; do not stop after the first ones. If the user gives only a first name (for example "
+    "\"Олександр\"), every entry that starts with or contains that name is a match, even when one "
+    "entry is just \"Олександр\" and others are \"Олександр Ляшенко\" or \"Олександр Денисов\": "
+    "list ALL of them with hall and @handle and never pick one. The same person (same @handle) can "
+    "appear under several halls: list them once and mention all their halls.\n"
+    "Halls: if the user did not name a hall and the values differ between halls, give each variant "
+    "labelled by hall (merge halls with identical values) instead of asking which hall.\n"
+    "Ask a clarifying question only when several different people match equally (for example "
+    "several trainers with the same first name), and then list them.\n"
+    "Follow-ups: \"he / she / it / there\" refer to the person or hall from the earlier turns.\n"
+    "You may add closely related details that are in the Context (conditions, neighbouring options), "
+    "but never anything that is not."
 )
 
+SOURCE_LABELS = {
+    "policy": "Правила запису та скасування",
+    "pricing_overview": "Ціни по залах — зведення",
+}
 
-def build_prompt(question: str, documents: list[dict], history: Optional[list[dict]] = None) -> list[dict]:
-    context = "\n\n".join(f"[{i + 1}] ({doc['source']})\n{doc['content']}" for i, doc in enumerate(documents))
-    user_message = f"Контекст:\n{context}\n\nПитання: {question}"
+
+def _doc_block(doc: dict) -> str:
+    content = doc["content"]
+    if content.lstrip().startswith("["):
+        return content  # indexed chunks already carry a "[Зал: ... | ...]" header
+    return f"[{SOURCE_LABELS.get(doc['source'], doc['source'])}]\n{content}"
+
+
+def language_directive(lang: str, strict: bool = False) -> str:
+    name = LANG_NAMES.get(lang, "Ukrainian")
+    text = (
+        f"Reply language: {name}. Write the entire reply in {name}. The Context is in Ukrainian: "
+        "translate the facts when needed, but keep names, hall names, phone numbers and @handles "
+        "exactly as in the Context. Never mention which language you are using."
+    )
+    if lang == UK:
+        text += " Use correct standard Ukrainian."
+    else:
+        text += " Do not transliterate or translate person names."
+    if lang == "en":
+        text += (" Write hall names exactly like this: Sotsmisto, Skhidnyi-2, 95 Kvartal, Vechirniy"
+                 " (for Соцмісто, Східний-2, 95 квартал, Вечірній).")
+    if strict:
+        text = f"IMPORTANT: your previous reply was in the wrong language. {text}"
+    return text
+
+
+def build_prompt(
+    question: str,
+    documents: list[dict],
+    history: Optional[list[dict]] = None,
+    lang: Optional[str] = None,
+    strict: bool = False,
+) -> list[dict]:
+    context = "\n\n".join(_doc_block(doc) for doc in documents)
+    user_message = f"Context:\n{context}\n\nQuestion: {question}"
+    if lang:
+        user_message += f"\n\n{language_directive(lang, strict)}"
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(history or [])
     messages.append({"role": "user", "content": user_message})
@@ -156,16 +171,33 @@ def _strip_citation_markers(text: str) -> str:
     return _CITATION_MARKER_RE.sub("", text)
 
 
+_LANGUAGE_PREAMBLE_RE = re.compile(
+    r"^\s*(?:питання\s+(?:російською|англійською|українською)|"
+    r"(?:okay|ok|sure|of course)[,!]?\s+(?:i(?:'ll| will)|let me)\s+(?:answer|reply|continue|respond|switch)|"
+    r"i(?:'ll| will)\s+(?:answer|reply|continue|respond)|"
+    r"(?:добре|хорошо|звичайно|конечно)[,!]?\s+(?:відповідаю|отвечаю|відповім|отвечу)|"
+    r"хорошо,\s*отвечу)[^.!\n]*[.!]\s*",
+    re.I,
+)
+
+
+def _strip_language_preamble(text: str) -> str:
+    """Drop a leading "I will answer in English." style sentence if the model still adds one."""
+    stripped = _LANGUAGE_PREAMBLE_RE.sub("", text, count=1)
+    return stripped if stripped.strip() else text
+
+
 def call_openrouter(messages: list[dict]) -> str:
     payload: dict = {
         "model": settings.openrouter_model,
         "messages": messages,
         "max_tokens": settings.openrouter_max_tokens,
+        "temperature": 0,  # factual extraction from a context, not creative writing
     }
-    if settings.openrouter_fallback_model and settings.openrouter_fallback_model != settings.openrouter_model:
-        payload["models"] = [settings.openrouter_model, settings.openrouter_fallback_model]
     if settings.openrouter_reasoning_effort:
         payload["reasoning"] = {"effort": settings.openrouter_reasoning_effort}
+    if settings.openrouter_fallback_model and settings.openrouter_fallback_model != settings.openrouter_model:
+        payload["models"] = [settings.openrouter_model, settings.openrouter_fallback_model]
     for attempt in range(3):
         response = httpx.post(
             OPENROUTER_URL,
@@ -178,14 +210,57 @@ def call_openrouter(messages: list[dict]) -> str:
             continue
         break
     response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    data = response.json()
+    # With a fallback configured OpenRouter may silently answer with another model: make it visible.
+    logger.info("served_by=%s requested=%s", data.get("model"), settings.openrouter_model)
+    return data["choices"][0]["message"]["content"]
 
 
-def answer_question(question: str, documents: list[dict], history: Optional[list[dict]] = None) -> dict:
-    messages = build_prompt(question, documents, history)
-    answer = call_openrouter(messages)
+_PHONE_RE = re.compile(r"(?<!\d)(?:\+?38)?[\s\-]?\(?0\d{2}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}(?!\d)")
+
+
+def _phone_key(match: "re.Match") -> str:
+    return re.sub(r"\D", "", match.group())[-10:]
+
+
+def _remove_ungrounded_phones(answer: str, documents: list[dict]) -> str:
+    """Drop any sentence that contains a phone number which is not in the retrieved context.
+
+    A model asked to "suggest calling the hall" will happily invent a plausible number when
+    the context has none (seen in testing: 097 123 45 67). A wrong phone number is the
+    worst failure for a customer-facing bot, so this is enforced in code, not by the prompt."""
+    known = {_phone_key(m) for d in documents for m in _PHONE_RE.finditer(d.get("content", ""))}
+
+    def ungrounded(text: str) -> bool:
+        return any(_phone_key(m) not in known for m in _PHONE_RE.finditer(text))
+
+    if not ungrounded(answer):
+        return answer
+    sentences = re.findall(r"[^.!?\n]+[.!?]*[ \t]*\n?|\n", answer)
+    kept = "".join(s for s in sentences if not ungrounded(s)).strip()
+    return kept or _PHONE_RE.sub("", answer).strip()
+
+
+def _postprocess(answer: str, documents: list[dict]) -> str:
+    answer = _remove_ungrounded_phones(answer, documents)
     answer = _restore_mangled_identifiers(answer, documents)
     answer = _strip_bold_markers(answer)
     answer = _strip_citation_markers(answer)
+    return _strip_language_preamble(answer).strip()
+
+
+def answer_question(
+    question: str,
+    documents: list[dict],
+    history: Optional[list[dict]] = None,
+    lang: Optional[str] = None,
+) -> dict:
+    messages = build_prompt(question, documents, history, lang)
+    answer = _postprocess(call_openrouter(messages), documents)
+    if lang and not answer_language_ok(answer, lang):
+        logger.warning("wrong reply language (wanted %s), retrying once", lang)
+        retry = _postprocess(call_openrouter(build_prompt(question, documents, history, lang, strict=True)), documents)
+        if answer_language_ok(retry, lang):
+            answer = retry
     sources = [{"source": doc["source"], "content": doc["content"]} for doc in documents]
     return {"answer": answer, "sources": sources}

@@ -22,11 +22,14 @@ def hybrid_search(query_text: str, match_count: int = 5) -> list[dict]:
     """Vector similarity + trigram keyword search, fused with RRF."""
     client = get_client()
     query_vector = embed_query(query_text)
+    # Candidate pools must be at least as big as what we return: with a fixed pool of 20
+    # per signal the old match_count=60 could never yield more than 40 chunks.
+    candidates = max(CANDIDATE_COUNT, match_count)
 
     vector_rows = (
         client.rpc(
             "match_documents_vector",
-            {"query_embedding": query_vector, "match_count": CANDIDATE_COUNT},
+            {"query_embedding": query_vector, "match_count": candidates},
         )
         .execute()
         .data
@@ -34,7 +37,7 @@ def hybrid_search(query_text: str, match_count: int = 5) -> list[dict]:
     trgm_rows = (
         client.rpc(
             "match_documents_trgm",
-            {"query_text": query_text, "match_count": CANDIDATE_COUNT},
+            {"query_text": query_text, "match_count": candidates},
         )
         .execute()
         .data
@@ -46,7 +49,21 @@ def hybrid_search(query_text: str, match_count: int = 5) -> list[dict]:
 
     fused = reciprocal_rank_fusion([vector_ids, trgm_ids])
     top_ids = [doc_id for doc_id, _score in fused[:match_count]]
-    return [docs_by_id[doc_id] for doc_id in top_ids]
+    docs = [docs_by_id[doc_id] for doc_id in top_ids]
+    # Present chunks in document order, not score order, so lists read top to bottom.
+    return sorted(docs, key=lambda d: (d["source"], d["id"]))
+
+
+def fetch_sources(sources: list[str]) -> list[dict]:
+    """Load every chunk of the given knowledge-base files, in the requested file order and
+    document order inside each file. Used when the question already names the hall/topic,
+    so nothing relevant can be lost by ranking."""
+    if not sources:
+        return []
+    client = get_client()
+    rows = client.table("documents").select("id,content,source").in_("source", sources).order("id").execute().data
+    order = {source: index for index, source in enumerate(dict.fromkeys(sources))}
+    return sorted(rows, key=lambda r: (order.get(r["source"], len(order)), r["id"]))
 
 
 def vector_only_search(query_text: str, match_count: int = 5) -> list[dict]:

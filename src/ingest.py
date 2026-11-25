@@ -1,24 +1,27 @@
-from pathlib import Path
+from collections import defaultdict
 
-from src.chunking import chunk_text
 from src.db import get_client
 from src.embeddings import embed_passages
-
-KB_DIR = Path(__file__).resolve().parent.parent / "data" / "kb"
+from src.kb import build_chunks
 
 
 def ingest() -> None:
+    """Re-index the knowledge base without ever leaving the live bot with an empty table:
+    new rows are inserted first, and only then are the previous rows of the same source
+    deleted (for a few seconds both generations exist, which is harmless)."""
     client = get_client()
-    for path in sorted(KB_DIR.glob("*.md")):
-        source = path.stem
-        text = path.read_text(encoding="utf-8")
-        chunks = chunk_text(text)
-        embeddings = embed_passages(chunks)
+    by_source: dict[str, list[str]] = defaultdict(list)
+    for row in build_chunks():
+        by_source[row["source"]].append(row["content"])
 
-        client.table("documents").delete().eq("source", source).execute()
-        rows = [{"content": chunk, "source": source, "embedding": vector} for chunk, vector in zip(chunks, embeddings)]
+    for source, contents in by_source.items():
+        old_ids = [r["id"] for r in client.table("documents").select("id").eq("source", source).execute().data]
+        embeddings = embed_passages(contents)
+        rows = [{"content": c, "source": source, "embedding": v} for c, v in zip(contents, embeddings)]
         client.table("documents").insert(rows).execute()
-        print(f"{source}: {len(rows)} chunks")
+        if old_ids:
+            client.table("documents").delete().in_("id", old_ids).execute()
+        print(f"{source}: {len(rows)} chunks (replaced {len(old_ids)})")
 
 
 if __name__ == "__main__":

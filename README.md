@@ -73,6 +73,10 @@ own locations and specialty instead of merging them into one entity.
 
 ## Results (measured, not asserted)
 
+> **Update, 2026-11-25.** The tables below predate the routing/language rework. Current state with
+> `qwen/qwen3-next-80b-a3b-instruct`: QA eval **24/24 faithfulness, 5/5 refusals** (through the
+> real pipeline); `eval.conversation_eval` **18/18 scenarios** (k=2, all runs must pass).
+
 Run yourself: `python3 -m eval.run_eval --with-generation` (needs `OPENROUTER_API_KEY`;
 retrieval-only numbers need no LLM calls).
 
@@ -93,8 +97,8 @@ Two retrieval sets are measured separately, because they test different things:
 | Faithfulness — generated answer contains the right facts | **23/24 (96%)** | measured on the LLM's output, not on retrieval; observed 22–23/24 (92–96%) across repeated runs — see below |
 | Refusal rate on 5 out-of-KB questions | **5/5 (100%)** | model never hallucinated an answer absent from the KB |
 
-The production API runs with `MATCH_COUNT=60` (near the full 56-chunk corpus — see the design
-note below), not the `k=5`/`k=1` values in this table. Those two depths are kept fixed here on
+The production API no longer ranks by `MATCH_COUNT`: it routes by hall/topic and loads whole files
+(see the design note below), so the `k=5`/`k=1` values in this table describe the search fallback only. Those two depths are kept fixed here on
 purpose: they're what originally exposed the RRF recall@1 regression, and re-measuring at the
 same depths after the KB tripled in size is what makes this table a comparison, not just a
 fresh set of numbers.
@@ -173,13 +177,32 @@ of the conversation are kept per chat and sent alongside the question, and the p
 assistant reply is folded into the retrieval query itself so the right chunk gets fetched
 even when the current question doesn't name the entity.
 
-**`MATCH_COUNT` scales with corpus size, not a fixed constant.** Retrieval
-depth (`MATCH_COUNT=14`) was tuned for a 17-chunk knowledge base. When the KB
-tripled to 56 chunks after adding two more locations, the same fixed count
-started under-covering the corpus and degraded retrieval quality. Raised to
-`MATCH_COUNT=60`. A more robust fix would scale this proportionally to
-`SELECT count(*) FROM documents` rather than picking a number by eye — noted
-as a follow-up, not yet implemented.
+**Route first, search only as a fallback (replaced the `MATCH_COUNT` approach).** The whole
+knowledge base is ~65 small chunks (~20 KB). Ranking them cannot add anything: it only
+drops chunks by chance — and the old `CANDIDATE_COUNT=20` per signal capped a request at 40 of
+56 chunks no matter how high `MATCH_COUNT` was set, which silently lost items from lists
+(3 boxing coaches spread over 3 chunks, the answer named 1 or 2). `src/routing.py` now detects
+the hall and the topic in plain code (aliases in uk/ru/en, typos included) and loads exactly
+those files in full and in document order. Hybrid search (`retrieval.py`) remains for questions
+that name neither a hall nor a topic ("Розкажи про Катерину Резвін").
+
+**Language is decided in code, not by the model.** `src/lang.py` resolves uk/ru/en from the
+conversation (explicit "english?" requests, confident messages, "keep the previous language
+for ambiguous ones") and `generation.py` appends one imperative line — `Reply language: X` —
+to the end of the last user message. The three conflicting language rules that used to live in a
+20-rule system prompt are gone; so are the "I will answer in English" preambles.
+
+**Everything deterministic stays out of the prompt.** Greetings and "who are you" are template
+answers (no LLM call), "english?" alone is acknowledged by a template, invented phone numbers
+are stripped from the answer if they are not in the retrieved context, `temperature=0`, and the
+served model is logged (an OpenRouter fallback model is configured, so it must be visible).
+
+**Chunks are logical units with a header.** `src/kb.py` builds one chunk per trainer / price
+section / hall contact block, each starting with `[Зал: Східний-2 | Ціни | Фітнес]`, so the
+model reads the real hall name instead of a file slug ("skhidnyi" → "Схидный"). Trainers who
+work in two halls get a chunk in both halls' files (derived from the KB's own "також проводить
+тренування в залі …" lines), trainer chunks carry skill tags (`бокс / boxing`), and a grouped
+`pricing_overview` chunk answers "how much is a single visit" without asking which hall.
 
 ## Architecture
 
@@ -214,34 +237,34 @@ as a follow-up, not yet implemented.
                      ┌─────────────────────┐
    POST /ask ──────► │   FastAPI (main.py)  │
    (question,        └──────────┬──────────┘
-    history)                    │
-                                 ▼
+    history)                    ▼
                     ┌────────────────────────┐
-                    │  hybrid_search(query)   │   src/retrieval.py
+                    │  respond()  pipeline.py │
                     └────────────┬────────────┘
                                  │
-                 ┌───────────────┴───────────────┐
-                 ▼                               ▼
-     match_documents_vector           match_documents_trgm
-     (pgvector cosine, RPC)           (pg_trgm similarity, RPC)
-                 │                               │
-                 └───────────────┬───────────────┘
-                                 ▼
-                  reciprocal_rank_fusion(...)      (pure fn, unit-tested)
+   1. history → last 4 messages        2. resolve_language()        src/lang.py
+   3. greeting / "english?" only?  ──► template answer, no LLM call
+   4. select_sources()  hall + topic   src/routing.py
+        ├─ found ──► fetch_sources(): whole files, document order     (src/retrieval.py)
+        │            narrow_trainers(): skill filter + one entry per person
+        └─ nothing recognised ──► hybrid_search(): pgvector + pg_trgm + RRF
                                  │
                                  ▼
-                    top-k documents (with sources)
+        build_prompt(): short system prompt + history + "Context / Question"
+                        + last line "Reply language: X"               src/generation.py
                                  │
                                  ▼
-                  build_prompt + call_openrouter    src/generation.py
+        OpenRouter (temperature 0, max_tokens, fallback model) ──► post-process:
+        restore @handle underscores, strip bold/[n] marks, drop language preamble,
+        drop phone numbers not present in the context, language check (+1 retry)
                                  │
                                  ▼
                   { answer, sources }  ◄──────────  returned to caller
 
 
-   Offline (once per KB change):
-   data/kb/*.md ──► chunk_text() ──► embed_passages() ──► upsert into `documents`
-                  src/chunking.py    src/embeddings.py         src/ingest.py
+   Offline (once per KB change, no downtime: insert new rows, then delete old ones):
+   data/kb/*.md ──► build_chunks() ──► embed_passages() ──► `documents`
+                    src/kb.py          src/embeddings.py      src/ingest.py
 ```
 
 ## Project layout
@@ -253,17 +276,22 @@ crossgym-rag/
 │   └── DESIGN_QA.md    # design rationale: RRF vs weighted fusion, recall@k, embeddings, reranker
 ├── src/
 │   ├── config.py     # env-based settings
-│   ├── chunking.py    # pure text chunking, paragraph-aware
+│   ├── chunking.py    # generic length-based chunker (kept for tests; the KB uses kb.py)
+│   ├── kb.py          # structural chunks: one trainer / price section per chunk, hall header, cross-hall entries
+│   ├── lang.py        # reply-language resolution (uk/ru/en), deterministic
+│   ├── routing.py     # hall/topic/skill detection -> which KB files to load
+│   ├── pipeline.py    # respond(): the whole question -> answer flow (used by /ask and eval)
 │   ├── embeddings.py  # sentence-transformers wrapper (multilingual e5)
 │   ├── db.py           # Supabase client factory
-│   ├── ingest.py       # loads data/kb, chunks, embeds, upserts to Supabase
-│   ├── retrieval.py    # hybrid search + RRF fusion + vector-only baseline
-│   ├── generation.py   # prompt building (+ conversation history) + OpenRouter call
+│   ├── ingest.py       # builds chunks, embeds, replaces rows without leaving the table empty
+│   ├── retrieval.py    # fetch_sources (whole files) + hybrid search fallback + RRF + vector-only baseline
+│   ├── generation.py   # short prompt, language directive, OpenRouter call, post-processing guards
 │   └── main.py          # FastAPI app: POST /ask, GET /health
 ├── eval/
 │   ├── qa_pairs.json    # 24 answerable + 5 adversarial (out-of-KB) + 7 exact-match Q&A pairs
-│   └── run_eval.py       # retrieval recall@k (hybrid vs vector-only), faithfulness, refusal rate
-├── tests/                 # pytest: chunking, RRF fusion, generation (mocked)
+│   ├── run_eval.py       # retrieval recall@k (hybrid vs vector-only), faithfulness, refusal rate (via pipeline.respond)
+│   └── conversation_eval.py  # 18 multi-turn / multi-language scenarios, pass^k (all k runs must pass)
+├── tests/                 # pytest: lang, routing, kb chunks, pipeline, generation guards, RRF (all mocked, no network)
 ├── workflows/
 │   └── telegram-bot.json  # n8n workflow export (credentials/API key stripped)
 └── Dockerfile
@@ -300,7 +328,8 @@ crossgym-rag/
 ## Testing and evaluation
 
 ```
-python3 -m pytest                            # unit tests: chunking, RRF fusion, generation (mocked)
+python3 -m pytest                            # unit tests (mocked, no network)
+python3 -m eval.conversation_eval --k 3      # multi-turn, multi-language scenarios (calls the LLM)
 python3 -m eval.run_eval                       # retrieval recall@k: hybrid vs vector-only baseline
 python3 -m eval.run_eval --with-generation     # + faithfulness on answerable Qs, refusal rate on adversarial Qs
 ```

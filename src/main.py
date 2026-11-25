@@ -1,12 +1,16 @@
+import logging
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
 from src.config import settings
 from src.embeddings import embed_query
-from src.generation import answer_question
-from src.retrieval import hybrid_search
+from src.pipeline import respond
+from src.routing import FOLLOW_UP_RE
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
@@ -20,21 +24,12 @@ async def _lifespan(_app: FastAPI):
 
 app = FastAPI(title="CrossGYM RAG Assistant", lifespan=_lifespan)
 
-COREFERENCE_MARKERS = [
-    "її", "його", "їх", "нього", "неї", "них", "цей", "ця", "це", "той", "та", "те",
-    "там", "туди", "воно", "цьому", "тому",
-]
-
 
 def _needs_coreference_resolution(question: str) -> bool:
-    """A short follow-up ("а її інстаграм?") often refers back to an entity the
-    question itself doesn't name. But blindly widening every retrieval query with
-    the previous answer backfires on self-contained questions: it dilutes the
-    embedding with irrelevant text (a prior greeting, small talk) and can push the
-    correct chunk out of the top-k. Only widen when the question actually contains
-    a pronoun/reference word that needs resolving."""
-    words = question.lower().split()
-    return any(word.strip(".,!?") in COREFERENCE_MARKERS for word in words)
+    """True when the question contains a reference word ("її", "там", "his", "there") that
+    only makes sense together with the previous turns. Function words that merely look
+    like pronouns ("та", "це", "тому") are deliberately not markers."""
+    return bool(FOLLOW_UP_RE.search(question))
 
 
 def require_api_key(x_api_key: str = Header(...)) -> None:
@@ -43,7 +38,7 @@ def require_api_key(x_api_key: str = Header(...)) -> None:
 
 
 class HistoryTurn(BaseModel):
-    role: str
+    role: Literal["user", "assistant"]
     content: str
 
 
@@ -70,15 +65,4 @@ def health() -> dict:
 @app.post("/ask", response_model=AskResponse, dependencies=[Depends(require_api_key)])
 def ask(request: AskRequest) -> AskResponse:
     history = [turn.model_dump() for turn in request.history]
-
-    retrieval_query = request.question
-    if _needs_coreference_resolution(request.question):
-        last_answer = next((turn["content"] for turn in reversed(history) if turn["role"] == "assistant"), None)
-        if last_answer:
-            retrieval_query = f"{last_answer}\n{request.question}"
-
-    documents = hybrid_search(retrieval_query, match_count=settings.match_count)
-    if not documents:
-        return AskResponse(answer="Не маю інформації про це.", sources=[])
-    result = answer_question(request.question, documents, history=history)
-    return AskResponse(**result)
+    return AskResponse(**respond(request.question, history))
