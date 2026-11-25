@@ -156,10 +156,13 @@ def _strip_citation_markers(text: str) -> str:
 
 
 def call_openrouter(messages: list[dict]) -> str:
+    payload: dict = {"model": settings.openrouter_model, "messages": messages}
+    if settings.openrouter_reasoning_effort:
+        payload["reasoning"] = {"effort": settings.openrouter_reasoning_effort}
     response = httpx.post(
         OPENROUTER_URL,
         headers={"Authorization": f"Bearer {settings.openrouter_api_key}"},
-        json={"model": settings.openrouter_model, "messages": messages},
+        json=payload,
         timeout=30.0,
     )
     response.raise_for_status()
