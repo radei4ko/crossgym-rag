@@ -162,6 +162,8 @@ def call_openrouter(messages: list[dict]) -> str:
         "messages": messages,
         "max_tokens": settings.openrouter_max_tokens,
     }
+    if settings.openrouter_fallback_model and settings.openrouter_fallback_model != settings.openrouter_model:
+        payload["models"] = [settings.openrouter_model, settings.openrouter_fallback_model]
     if settings.openrouter_reasoning_effort:
         payload["reasoning"] = {"effort": settings.openrouter_reasoning_effort}
     for attempt in range(3):
